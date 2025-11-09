@@ -1,76 +1,95 @@
-import streamlit as st
+# CELL 4: Run the main Dash app (Corrected Code)
+import dash
+from dash import Dash, dcc, html  # <-- Import Dash from dash
+from dash.dependencies import Input, Output, State
+import calculator
+import plotly.graph_objects as go
+import pandas as pd
 
-# --- 1. SET UP THE PAGE ---
-# Set the page title and add a header
-st.set_page_config(page_title="Carbon Calculator", layout="wide")
-st.title("🌱 My Carbon Emission Calculator")
-st.write("Enter your consumption data below to estimate your monthly carbon footprint.")
+factors = calculator.load_emission_factors("factors.json")
 
-# --- 2. DEFINE EMISSION FACTORS ---
-# These are the "magic numbers" from our Week 1 research (in kg CO2e)
-# We can add more to this dictionary later
-EMISSION_FACTORS = {
-    "electricity": 0.37,  # kg CO2e per kWh
-    "natural_gas": 5.3,   # kg CO2e per therm
-    "gasoline_car": 0.40, # kg CO2e per mile
-    "flights": 0.13,      # kg CO2e per passenger-mile
-    # Simple diet estimates (per month) - these are very rough!
-    "diet_avg": 180,      # Average/Meat-Eater (kg CO2e)
-    "diet_veg": 120,      # Vegetarian (kg CO2e)
-    "diet_vegan": 90      # Vegan (kg CO2e)
-}
+app = Dash(__name__, external_stylesheets=['https://codepen.io/chriddyp/pen/bWLwgP.css']) # <-- Use Dash()
+app.title = "Carbon Calculator"
 
-# --- 3. GET USER INPUTS (The UI) ---
-# Use columns to organize the layout
-col1, col2 = st.columns(2)
+app.layout = html.Div(children=[
+    html.H1(children='🌱 Carbon Footprint Calculator', style={'textAlign': 'center'}),
+    html.P("Enter your monthly data below to estimate your footprint.", style={'textAlign': 'center'}),
+    html.Div(className='row', children=[
+        html.Div(className='six columns', children=[
+            html.H3("🏡 Home Energy"),
+            html.Label("Monthly electricity used (in kWh):"),
+            dcc.Input(id='kwh-input', value=0, type='number'),
+            html.Label("Monthly natural gas used (in therms):"),
+            dcc.Input(id='therms-input', value=0, type='number'),
+            html.H3("🚗 Transportation"),
+            html.Label("Monthly miles driven (petrol car):"),
+            dcc.Input(id='miles-car-input', value=0, type='number'),
+            html.Label("Monthly miles flown:"),
+            dcc.Input(id='miles-flights-input', value=0, type='number'),
+            html.H3("🍽️ Consumption"),
+            html.Label("Primary diet:"),
+            dcc.Dropdown(
+                id='diet-input',
+                options=[
+                    {'label': 'Average / Meat-Eater', 'value': 'Average / Meat-Eater'},
+                    {'label': 'Vegetarian', 'value': 'Vegetarian'},
+                    {'label': 'Vegan', 'value': 'Vegan'}
+                ],
+                value='Average / Meat-Eater'
+            ),
+            html.Button('Calculate Footprint', id='calculate-button', n_clicks=0, style={'marginTop': '20px'})
+        ]),
+        html.Div(className='six columns', children=[
+            html.H2("Your Results", style={'textAlign': 'center'}),
+            html.Div(id='output-total-div'),
+            dcc.Graph(id='output-pie-chart')
+        ])
+    ])
+], style={'padding': '20px'})
 
-with col1:
-    st.header("🏡 Home Energy")
-    # Get number inputs from the user
-    kwh_electricity = st.number_input("Monthly electricity used (in kWh):", min_value=0.0, step=1.0)
-    therms_gas = st.number_input("Monthly natural gas used (in therms):", min_value=0.0, step=1.0)
+@app.callback(
+    [Output('output-total-div', 'children'),
+     Output('output-pie-chart', 'figure')],
+    [Input('calculate-button', 'n_clicks')],
+    [State('kwh-input', 'value'),
+     State('therms-input', 'value'),
+     State('miles-car-input', 'value'),
+     State('miles-flights-input', 'value'),
+     State('diet-input', 'value')]
+)
+def update_output(n_clicks, kwh, therms, miles_car, miles_flights, diet):
+    if n_clicks == 0:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(title="Your breakdown will appear here", title_x=0.5)
+        return html.H3("Click 'Calculate' to see your total.", style={'textAlign': 'center'}), empty_fig
 
-with col2:
-    st.header("🚗 Transportation")
-    miles_car = st.number_input("Monthly miles driven (in a petrol car):", min_value=0.0, step=1.0)
-    miles_flights = st.number_input("Monthly miles flown (on planes):", min_value=0.0, step=1.0)
+    user_inputs = {
+        "kwh": float(kwh), "therms": float(therms),
+        "miles_car": float(miles_car), "miles_flights": float(miles_flights),
+        "diet": diet
+    }
 
-# Input for consumption
-st.header("🍽️ Consumption")
-diet_choice = st.selectbox("What is your primary diet?", 
-                           ("Average / Meat-Eater", "Vegetarian", "Vegan"))
+    results, df = calculator.calculate_footprint(user_inputs, factors)
 
+    if results is None:
+        return html.H3("An error occurred.", style={'color': 'red'}), dash.no_update
 
-# --- 4. THE CALCULATION LOGIC ---
-# This section will run when the user clicks the button
-if st.button("Calculate My Footprint"):
-    
-    # Calculate emissions for each category
-    electricity_emissions = kwh_electricity * EMISSION_FACTORS["electricity"]
-    gas_emissions = therms_gas * EMISSION_FACTORS["natural_gas"]
-    car_emissions = miles_car * EMISSION_FACTORS["gasoline_car"]
-    flight_emissions = miles_flights * EMISSION_FACTORS["flights"]
-    
-    # Get diet emissions
-    if diet_choice == "Average / Meat-Eater":
-        diet_emissions = EMISSION_FACTORS["diet_avg"]
-    elif diet_choice == "Vegetarian":
-        diet_emissions = EMISSION_FACTORS["diet_veg"]
-    else:
-        diet_emissions = EMISSION_FACTORS["diet_vegan"]
+    total_emissions = results["total_emissions"]
+    total_output = html.H3(
+        f"Total: {total_emissions:,.2f} kg CO2e",
+        style={'textAlign': 'center', 'color': '#1f77b4'}
+    )
 
-    # Calculate total
-    total_emissions = electricity_emissions + gas_emissions + car_emissions + flight_emissions + diet_emissions
+    pie_fig = go.Figure(data=[
+        go.Pie(
+            labels=df['Category'],
+            values=df['Emissions (kg CO2e)'],
+            hole=.3
+        )
+    ])
+    pie_fig.update_layout(title="Your Footprint Breakdown", title_x=0.5)
+    return total_output, pie_fig
 
-    # --- 5. DISPLAY THE RESULTS ---
-    st.success(f"Your estimated total monthly footprint is: **{total_emissions:,.2f} kg CO2e**")
-    
-    st.subheader("Your Footprint Breakdown:")
-    # (Week 3 task will be to add a pie chart here)
-    st.write(f"* **Home Energy:** {electricity_emissions + gas_emissions:,.2f} kg")
-    st.write(f"* **Transportation:** {car_emissions + flight_emissions:,.2f} kg")
-    st.write(f"* **Diet:** {diet_emissions:,.2f} kg")
-
-    st.subheader("💡 Your Personalized Suggestion:")
-    # (Week 3 task will be to make this logic smarter)
-    st.info("Based on your data, a great place to start reducing is by looking at your home energy use.")
+# Run the app and print the link
+print("Your app is ready! Click the link below to open it:")
+app.run(jupyter_mode="external") # <-- Use app.run()
