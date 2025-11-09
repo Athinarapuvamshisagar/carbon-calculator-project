@@ -1,0 +1,9 @@
+# CELL 2: Create factors.json
+%%writefile factors.json
+{
+  "electricity": { "factor": 0.37, "unit": "kg CO2e per kWh" },
+  "natural_gas": { "factor": 5.3, "unit": "kg CO2e per therm" },
+  "gasoline_car": { "factor": 0.40, "unit": "kg CO2e per mile" },
+  "flights": { "factor": 0.13, "unit": "kg CO2e per passenger-mile" },
+  "diet": { "avg": 180, "veg": 120, "vegan": 90, "unit": "kg CO2e per month" }
+}
